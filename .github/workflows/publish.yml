@@ -1,0 +1,39 @@
+name: Publish trending report
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"   # every 3 hours (UTC); GitHub may run it a few minutes late
+  workflow_dispatch:         # "Run workflow" button for a manual refresh
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generate report
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          TZ: Europe/Vilnius
+        run: |
+          mkdir -p public
+          python3 lt_trending.py --neighbours -q --html public/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deploy
+        uses: actions/deploy-pages@v4
