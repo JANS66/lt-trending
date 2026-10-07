@@ -27,7 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 
 API = "https://www.googleapis.com/youtube/v3"
 
@@ -128,7 +128,7 @@ def parse_video(v):
         "id": v["id"],
         "title": s["title"],
         "channel": s["channelTitle"],
-        "published": s["publishedAt"][:10],
+        "published": s["publishedAt"],
         "views": int(st.get("viewCount", 0)),
         "likes": int(st["likeCount"]) if "likeCount" in st else None,
         "duration": fmt_duration(iso),
@@ -169,6 +169,18 @@ def fmt_duration(iso):
         return ""
     h, m, s = hms
     return f"{h}:{m:02}:{s:02}" if h else f"{m}:{s:02}"
+
+
+def fmt_ago(iso):
+    """'2026-10-02T14:00:00Z' -> '5 days ago' (or 'N hours ago' if under a day)."""
+    then = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    secs = max((datetime.now(timezone.utc) - then).total_seconds(), 0)
+    days, hours = int(secs // 86400), int(secs // 3600)
+    if days:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    if hours:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    return "just now"
 
 
 def fmt_num(n):
@@ -258,7 +270,8 @@ def html_categories(results, region):
                 f'<b>{i}</b><i>{v["duration"]}</i></div>'
                 f'<h3>{html.escape(v["title"])}</h3>'
                 f'<p>{html.escape(v["channel"])}</p>'
-                f'<p>{fmt_num(v["views"])} views · {fmt_num(v["likes"])} likes · {v["published"]}</p></a>'
+                f'<p>{fmt_num(v["views"])} views · {fmt_num(v["likes"])} likes · '
+                f'<span title="{v["published"][:10]}">{fmt_ago(v["published"])}</span></p></a>'
                 for i, v in enumerate(cat["videos"], 1))
         else:
             cards = f'<p class="empty">No trending chart for this category ({html.escape(cat.get("note", "empty"))}).</p>'
