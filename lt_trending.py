@@ -360,6 +360,9 @@ def main():
                 r["categories"] = [next(fetched) for _ in r["categories"]]
     except ApiError as e:
         sys.exit(f"API error: {e}")
+    # fail loudly (non-zero exit -> failed CI run) instead of publishing an empty report
+    if not any(c["videos"] for r in regions for c in r["categories"]):
+        sys.exit("No videos fetched for any region (see errors above).")
 
     # categories with content first (keeping Overall on top), empty ones last
     for r in regions:
