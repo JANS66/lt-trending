@@ -217,31 +217,60 @@ def print_categories(results):
             print(f"      {v['channel']} | {fmt_num(v['views'])} views | {v['duration']} | {v['url']}")
 
 
+def flag(code):
+    """'LT' -> regional-indicator flag emoji."""
+    return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in code) if len(code) == 2 and code.isalpha() else ""
+
+
+def cat_slug(cat):
+    return cat["id"] or "all"  # Overall has no category id
+
+
 def write_html(regions, path, generated):
-    blocks, region_nav = [], []
+    # One page, but only one country + category is shown at a time (picked by the
+    # #REGION/CATEGORY hash, so a refresh or shared link keeps the same view).
+    country_nav, cat_navs, sections = [], [], []
     for r in regions:
-        region_nav.append(f'<a href="#{r["region"]}">{html.escape(r["name"])}</a>')
+        code = r["region"]
+        dist = f' <span>{r["distance_km"]} km</span>' if r["distance_km"] else ""
+        country_nav.append(f'<a href="#{code}" data-r="{code}">{flag(code)} {html.escape(r["name"])}{dist}</a>')
         if r.get("note"):
-            body = f'<section><p class="empty">Skipped: {html.escape(r["note"])}.</p></section>'
+            cat_navs.append(f'<nav class="cats" data-r="{code}"></nav>')
+            sections.append(f'<section data-r="{code}" data-c="all" data-title="{html.escape(r["name"])}"><h2>{flag(code)} {html.escape(r["name"])}</h2>'
+                            f'<p class="empty">Skipped: {html.escape(r["note"])}.</p></section>')
         else:
-            body = html_categories(r["categories"], r["region"])
-        blocks.append(f'<div class="region" id="{r["region"]}"><h1>{html.escape(region_label(r))}</h1>'
-                      f'{body}</div>')
+            nav, secs = html_categories(r)
+            cat_navs.append(nav)
+            sections += secs
     title = ", ".join(r["region"] for r in regions)
+    countries = f'<nav class="countries">{"".join(country_nav)}</nav>' if len(regions) > 1 else ""
 
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trending in {title}</title><style>
 :root{{--bg:#fff;--fg:#111;--mut:#666;--card:#f4f4f5;--acc:#c00}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#0f0f10;--fg:#eee;--mut:#999;--card:#1c1c1f;--acc:#f55}}}}
+[hidden]{{display:none!important}}
 body{{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}}
-header{{padding:20px 16px 8px}} header h1{{margin:0;font-size:22px}} header p{{margin:4px 0;color:var(--mut)}}
-header nav{{position:static;border:0;padding:8px 0 0}}
-.region h1{{margin:0;padding:20px 16px 4px;font-size:20px;border-top:2px solid var(--card)}}
-nav{{position:sticky;top:0;background:var(--bg);padding:8px 16px;display:flex;gap:6px;overflow-x:auto;border-bottom:1px solid var(--card);z-index:1}}
-nav a{{white-space:nowrap;padding:4px 10px;border-radius:99px;background:var(--card);color:var(--fg);text-decoration:none;font-size:13px}}
-nav a span{{color:var(--mut)}}
-section{{padding:8px 16px}} h2{{font-size:18px;border-left:4px solid var(--acc);padding-left:8px}}
+.title{{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:14px 16px 4px}}
+.title h1{{margin:0;font-size:18px}} .title p{{margin:0;color:var(--mut);font-size:13px}}
+.title .keys{{margin-left:auto}} @media (hover:none){{.title .keys{{display:none}}}}
+.top{{background:var(--bg);border-bottom:1px solid var(--card);padding:4px 0 6px;z-index:2}}
+.js .top{{position:sticky;top:0}}
+.top nav{{display:flex;gap:6px;overflow-x:auto;padding:4px 16px;scrollbar-width:none;position:relative}}
+.top nav a{{white-space:nowrap;color:var(--fg);text-decoration:none;font-size:13px}}
+.top nav a span{{color:var(--mut);font-weight:400}}
+.countries a{{padding:6px 12px;border-radius:8px;font-weight:600;font-size:14px!important}}
+.countries a:hover{{background:var(--card)}}
+.countries a[aria-current]{{background:var(--fg);color:var(--bg)}} .countries a[aria-current] span{{color:inherit;opacity:.7}}
+.cats a{{padding:4px 10px;border-radius:99px;background:var(--card)}}
+.cats a.none{{opacity:.45}}
+.cats a[aria-current]{{background:var(--acc);color:#fff;opacity:1}} .cats a[aria-current] span{{color:inherit;opacity:.8}}
+section{{padding:8px 16px 24px}}
+h2{{font-size:20px;margin:12px 0 14px}} h2 .sep{{color:var(--mut);font-weight:400;margin:0 4px}}
+.pager{{display:flex;justify-content:space-between;gap:12px;margin-top:24px}}
+.pager a{{padding:8px 14px;border-radius:8px;background:var(--card);color:var(--fg);text-decoration:none;font-size:14px}}
+.pager a:hover{{color:var(--acc)}} .pager .next{{margin-left:auto}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}}
 .card{{color:inherit;text-decoration:none}} .card:hover h3{{color:var(--acc)}}
 .th{{position:relative}} .th img{{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;background:var(--card)}}
@@ -250,19 +279,62 @@ section{{padding:8px 16px}} h2{{font-size:18px;border-left:4px solid var(--acc);
 .card h3{{font-size:14px;margin:6px 0 2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
 .card p{{margin:0;color:var(--mut);font-size:12px}} .empty{{color:var(--mut)}}
 </style></head><body>
-<header><h1>YouTube trending in {title}, by category</h1><p>Generated {generated}</p>
-{f'<nav>{"".join(region_nav)}</nav>' if len(regions) > 1 else ''}</header>
-{''.join(blocks)}</body></html>"""
+<div class="title"><h1>YouTube trending in {title}</h1><p>Updated {generated}</p>
+<p class="keys">← → switch category</p></div>
+<header class="top">{countries}{''.join(cat_navs)}</header>
+<main>{''.join(sections)}</main>
+<script>{HTML_SCRIPT}</script></body></html>"""
     with open(path, "w", encoding="utf-8") as f:
         f.write(page)
 
 
-def html_categories(results, region):
+HTML_SCRIPT = """
+document.documentElement.classList.add('js');
+const secs = [...document.querySelectorAll('main section')];
+const pageTitle = document.title;
+let cur = null;
+function show(scroll) {
+  const [r, c] = decodeURIComponent(location.hash.slice(1)).split('/');
+  const inRegion = secs.filter(s => s.dataset.r === (r || (cur && cur.dataset.r)));
+  const pool = inRegion.length ? inRegion : secs.filter(s => s.dataset.r === secs[0].dataset.r);
+  // a country tab (#BY) keeps the current category, so countries are easy to compare
+  const want = c || (cur && cur.dataset.c);
+  const s = pool.find(s => s.dataset.c === want) || pool[0];
+  const hash = '#' + s.dataset.r + '/' + s.dataset.c;
+  if (location.hash !== hash) history.replaceState(null, '', hash);
+  if (s === cur) return;
+  cur = s;
+  secs.forEach(x => x.hidden = x !== s);
+  document.querySelectorAll('.countries a').forEach(a => a.toggleAttribute('aria-current', a.dataset.r === s.dataset.r));
+  document.querySelectorAll('.cats').forEach(nav => {
+    nav.hidden = nav.dataset.r !== s.dataset.r;
+    nav.querySelectorAll('a').forEach(a => {
+      const on = a.getAttribute('href') === hash;
+      a.toggleAttribute('aria-current', on);
+      if (on) nav.scrollLeft = a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2;
+    });
+  });
+  document.title = s.dataset.title + ' · ' + pageTitle;
+  if (scroll) window.scrollTo(0, 0);
+}
+addEventListener('hashchange', () => show(true));
+addEventListener('keydown', e => {
+  const sel = {ArrowLeft: '.pager .prev', ArrowRight: '.pager .next'}[e.key];
+  if (!sel || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !cur) return;
+  const a = cur.querySelector(sel);
+  if (a) location.hash = a.getAttribute('href');
+});
+show(false);
+"""
+
+
+def html_categories(r):
+    code, results = r["region"], r["categories"]
     sections, nav = [], []
-    for cat in results:
-        anchor = f"{region}-cat-{cat['id']}"
-        nav.append(f'<a href="#{anchor}">{html.escape(cat["title"])} '
-                   f'<span>{len(cat["videos"])}</span></a>')
+    for n, cat in enumerate(results):
+        short = cat["title"] if cat["id"] else "Overall"
+        nav.append(f'<a href="#{code}/{cat_slug(cat)}"{"" if cat["videos"] else " class=none"}>'
+                   f'{html.escape(short)} <span>{len(cat["videos"])}</span></a>')
         if cat["videos"]:
             cards = "".join(
                 f'<a class="card" href="{v["url"]}" target="_blank" rel="noopener">'
@@ -275,10 +347,20 @@ def html_categories(results, region):
                 for i, v in enumerate(cat["videos"], 1))
         else:
             cards = f'<p class="empty">No trending chart for this category ({html.escape(cat.get("note", "empty"))}).</p>'
-        sections.append(f'<section id="{anchor}"><h2>{html.escape(cat["title"])}</h2>'
-                        f'<div class="grid">{cards}</div></section>')
+        pager = ""
+        if n > 0:
+            p = results[n - 1]
+            pager += (f'<a class="prev" href="#{code}/{cat_slug(p)}">← '
+                      f'{html.escape(p["title"] if p["id"] else "Overall")}</a>')
+        if n < len(results) - 1:
+            p = results[n + 1]
+            pager += f'<a class="next" href="#{code}/{cat_slug(p)}">{html.escape(p["title"])} →</a>'
+        sections.append(f'<section data-r="{code}" data-c="{cat_slug(cat)}" '
+                        f'data-title="{html.escape(short)} · {html.escape(r["name"])}">'
+                        f'<h2>{flag(code)} {html.escape(r["name"])}<span class="sep">›</span>{html.escape(short)}</h2>'
+                        f'<div class="grid">{cards}</div><nav class="pager">{pager}</nav></section>')
 
-    return f'<nav>{"".join(nav)}</nav>{"".join(sections)}'
+    return f'<nav class="cats" data-r="{code}">{"".join(nav)}</nav>', sections
 
 
 def main():
